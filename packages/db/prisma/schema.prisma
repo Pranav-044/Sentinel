@@ -1,0 +1,185 @@
+// This is your Prisma schema file for Sentinel
+// Manages: users, GitHub orgs/repos, analysis jobs, and health score time-series
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Users ────────────────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(uuid())
+  githubId     Int      @unique @map("github_id")
+  githubLogin  String   @unique @map("github_login")
+  email        String?  @unique
+  name         String
+  avatarUrl    String?  @map("avatar_url")
+  // Encrypted GitHub OAuth token — used to query org/repo data on behalf of user
+  accessToken  String   @map("access_token")
+  refreshToken String?  @map("refresh_token")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  memberships       OrgMember[]
+  jwtRefreshTokens  JwtRefreshToken[]
+  triggeredJobs     AnalysisJob[]     @relation("JobTriggeredBy")
+
+  @@map("users")
+}
+
+// ─── JWT Refresh Tokens ───────────────────────────────────────────────────────
+
+model JwtRefreshToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  tokenHash String    @unique @map("token_hash")  // SHA-256 of the opaque token
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("jwt_refresh_tokens")
+}
+
+// ─── Organizations ────────────────────────────────────────────────────────────
+
+model Organization {
+  id          String  @id @default(uuid())
+  githubId    Int     @unique @map("github_id")
+  login       String  @unique             // GitHub org slug, e.g. "acme-corp"
+  name        String?
+  avatarUrl   String? @map("avatar_url")
+  description String?
+  // GitHub App / OAuth App installation id for webhook delivery
+  installationId Int? @map("installation_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  members      OrgMember[]
+  repositories Repository[]
+
+  @@map("organizations")
+}
+
+model OrgMember {
+  organizationId String   @map("organization_id")
+  userId         String   @map("user_id")
+  role           OrgRole  @default(member)
+  joinedAt       DateTime @default(now()) @map("joined_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([organizationId, userId])
+  @@map("org_members")
+}
+
+enum OrgRole {
+  owner
+  admin
+  member
+}
+
+// ─── Repositories ─────────────────────────────────────────────────────────────
+
+model Repository {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  githubId       Int      @unique @map("github_id")
+  name           String                           // e.g. "api-gateway"
+  fullName       String   @unique @map("full_name") // e.g. "acme-corp/api-gateway"
+  description    String?
+  defaultBranch  String   @default("main") @map("default_branch")
+  cloneUrl       String   @map("clone_url")
+  isPrivate      Boolean  @default(false) @map("is_private")
+  isActive       Boolean  @default(true) @map("is_active")  // analysis enabled
+  lastAnalyzedAt DateTime? @map("last_analyzed_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  jobs         AnalysisJob[]
+  healthScores HealthScore[]
+
+  @@index([organizationId])
+  @@map("repositories")
+}
+
+// ─── Analysis Jobs ────────────────────────────────────────────────────────────
+
+model AnalysisJob {
+  id             String      @id @default(uuid())
+  repositoryId   String      @map("repository_id")
+  triggeredById  String?     @map("triggered_by_id")  // null if triggered by webhook
+  trigger        JobTrigger  @default(webhook)
+  status         JobStatus   @default(pending)
+  commitSha      String?     @map("commit_sha")
+  branch         String?
+  // JSON payload: error details, agent sub-status, etc.
+  metadata       Json        @default("{}")
+  errorMessage   String?     @map("error_message")
+  createdAt      DateTime    @default(now()) @map("created_at")
+  startedAt      DateTime?   @map("started_at")
+  completedAt    DateTime?   @map("completed_at")
+
+  repository  Repository   @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  triggeredBy User?        @relation("JobTriggeredBy", fields: [triggeredById], references: [id], onDelete: SetNull)
+  healthScore HealthScore?
+
+  @@index([repositoryId, createdAt(sort: Desc)])
+  @@index([status])
+  @@map("analysis_jobs")
+}
+
+enum JobStatus {
+  pending
+  processing
+  completed
+  failed
+}
+
+enum JobTrigger {
+  webhook
+  manual
+  scheduled
+}
+
+// ─── Health Scores (Time-Series) ─────────────────────────────────────────────
+
+model HealthScore {
+  id                String   @id @default(uuid())
+  repositoryId      String   @map("repository_id")
+  jobId             String   @unique @map("job_id")
+
+  // Overall weighted score: 0-100 (100 = perfectly healthy)
+  overallScore      Float    @map("overall_score")
+
+  // Component scores: 0-100 each
+  complexityScore   Float    @map("complexity_score")   // inversely proportional to avg cyclomatic complexity
+  churnScore        Float    @map("churn_score")        // inversely proportional to high-churn files
+  couplingScore     Float    @map("coupling_score")     // inversely proportional to coupling/fan-in
+  testCoverageScore Float    @map("test_coverage_score")
+
+  // Computed by Player A's analysis engine
+  debtMinutes       Int      @map("debt_minutes")       // estimated remediation time in minutes
+  hotspotCount      Int      @default(0) @map("hotspot_count")  // files flagged as hotspots
+
+  // Raw JSON from Player A's agents (architecture smells, security findings, etc.)
+  agentFindings     Json     @default("[]") @map("agent_findings")
+
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  repository Repository  @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  job        AnalysisJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([repositoryId, createdAt(sort: Desc)])
+  @@map("health_scores")
+}
