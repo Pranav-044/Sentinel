@@ -1,0 +1,186 @@
+version: '3.9'
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Sentinel — Local Development Stack
+#
+# Services:
+#   api-gateway        → http://localhost:4000     (main entrypoint)
+#   auth-service       → http://localhost:4001
+#   ingestion-service  → http://localhost:4002
+#   orchestrator       → http://localhost:4003
+#   postgres           → localhost:5432
+#   rabbitmq           → localhost:5672 (AMQP), localhost:15672 (Management UI)
+#   redis              → localhost:6379
+#   prometheus         → http://localhost:9090
+#   grafana            → http://localhost:3001
+# ─────────────────────────────────────────────────────────────────────────────
+
+x-common-env: &common-env
+  NODE_ENV: development
+  DATABASE_URL: postgresql://sentinel:sentinel@postgres:5432/sentinel
+  RABBITMQ_URL: amqp://sentinel:sentinel@rabbitmq:5672
+  REDIS_URL: redis://redis:6379
+  JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-dev-sentinel-access-secret-min-32-chars}
+  JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev-sentinel-refresh-secret-min-32-chars}
+  JWT_ACCESS_EXPIRY: ${JWT_ACCESS_EXPIRY:-1h}
+  JWT_REFRESH_EXPIRY_DAYS: ${JWT_REFRESH_EXPIRY_DAYS:-30}
+
+services:
+  # ── API Gateway ───────────────────────────────────────────────────────────
+  api-gateway:
+    build:
+      context: ..
+      dockerfile: apps/api-gateway/Dockerfile
+    ports:
+      - '4000:4000'
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      <<: *common-env
+      PORT: 4000
+      CORS_ORIGIN: http://localhost:3000
+      AUTH_SERVICE_URL: http://auth-service:4001
+      INGESTION_SERVICE_URL: http://ingestion-service:4002
+      ORCHESTRATOR_URL: http://orchestrator:4003
+
+  # ── Auth Service ──────────────────────────────────────────────────────────
+  auth-service:
+    build:
+      context: ..
+      dockerfile: apps/auth-service/Dockerfile
+    ports:
+      - '4001:4001'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: *common-env
+      PORT: 4001
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-your_github_oauth_client_id}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-your_github_oauth_client_secret}
+      GITHUB_REDIRECT_URI: ${GITHUB_REDIRECT_URI:-http://localhost:4001/auth/github/callback}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:4001/health']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Ingestion Service ─────────────────────────────────────────────────────
+  ingestion-service:
+    build:
+      context: ..
+      dockerfile: apps/ingestion-service/Dockerfile
+    ports:
+      - '4002:4002'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      <<: *common-env
+      PORT: 4002
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-dev-webhook-secret-change-in-prod}
+
+  # ── Orchestrator ──────────────────────────────────────────────────────────
+  orchestrator:
+    build:
+      context: ..
+      dockerfile: apps/orchestrator/Dockerfile
+    ports:
+      - '4003:4003'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      <<: *common-env
+      PORT: 4003
+
+  # ── PostgreSQL 15 ─────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_DB: sentinel
+      POSTGRES_USER: sentinel
+      POSTGRES_PASSWORD: sentinel
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U sentinel']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── RabbitMQ 3.13 ─────────────────────────────────────────────────────────
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    ports:
+      - '5672:5672'    # AMQP
+      - '15672:15672'  # Management UI (user: sentinel / sentinel)
+    environment:
+      RABBITMQ_DEFAULT_USER: sentinel
+      RABBITMQ_DEFAULT_PASS: sentinel
+      # Enable the management plugin
+      RABBITMQ_PLUGINS: rabbitmq_management
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis 7 ───────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── Prometheus ─────────────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - '9090:9090'
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+
+  # ── Grafana ────────────────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - '3001:3000'
+    depends_on:
+      - prometheus
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+    volumes:
+      - grafana_data:/var/lib/grafana
+
+volumes:
+  pg_data:
+  rabbitmq_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
