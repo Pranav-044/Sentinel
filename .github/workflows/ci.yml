@@ -1,0 +1,165 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop, 'feature/**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── Build & Type Check ──────────────────────────────────────────────────────
+  build:
+    name: Build & Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9.4.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared packages
+        run: pnpm turbo build --filter=@sentinel/types --filter=@sentinel/config
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+        env:
+          DATABASE_URL: postgresql://sentinel:sentinel@localhost:5432/sentinel
+
+      - name: Type check all services
+        run: pnpm turbo build
+        env:
+          DATABASE_URL: postgresql://sentinel:sentinel@localhost:5432/sentinel
+          JWT_ACCESS_SECRET: ci-access-secret-at-least-32-characters-long-here
+          JWT_REFRESH_SECRET: ci-refresh-secret-at-least-32-characters-long-here
+          GITHUB_CLIENT_ID: ci_mock_client_id
+          GITHUB_CLIENT_SECRET: ci_mock_client_secret
+          GITHUB_WEBHOOK_SECRET: ci_mock_webhook_secret
+
+  # ── Integration Tests ───────────────────────────────────────────────────────
+  test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: sentinel_test
+          POSTGRES_USER: sentinel
+          POSTGRES_PASSWORD: sentinel
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      rabbitmq:
+        image: rabbitmq:3.13-alpine
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9.4.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared packages
+        run: pnpm turbo build --filter=@sentinel/types --filter=@sentinel/config
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+        env:
+          DATABASE_URL: postgresql://sentinel:sentinel@localhost:5432/sentinel_test
+
+      - name: Run database migrations
+        run: pnpm db:migrate:deploy
+        env:
+          DATABASE_URL: postgresql://sentinel:sentinel@localhost:5432/sentinel_test
+
+      - name: Run tests
+        run: pnpm turbo test
+        env:
+          DATABASE_URL: postgresql://sentinel:sentinel@localhost:5432/sentinel_test
+          RABBITMQ_URL: amqp://guest:guest@localhost:5672
+          REDIS_URL: redis://localhost:6379
+          JWT_ACCESS_SECRET: ci-access-secret-at-least-32-characters-long-here
+          JWT_REFRESH_SECRET: ci-refresh-secret-at-least-32-characters-long-here
+          GITHUB_CLIENT_ID: ci_mock_client_id
+          GITHUB_CLIENT_SECRET: ci_mock_client_secret
+          GITHUB_WEBHOOK_SECRET: ci_mock_webhook_secret
+          NODE_ENV: test
+
+  # ── Docker Compose Smoke Test ───────────────────────────────────────────────
+  infra-smoke:
+    name: Infrastructure Smoke Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start core infrastructure
+        run: |
+          docker compose -f infra/docker-compose.yml up -d postgres rabbitmq redis
+        env:
+          JWT_ACCESS_SECRET: ci-smoke-access-secret-at-least-32-chars
+          JWT_REFRESH_SECRET: ci-smoke-refresh-secret-at-least-32-chars
+          GITHUB_CLIENT_ID: mock
+          GITHUB_CLIENT_SECRET: mock
+          GITHUB_WEBHOOK_SECRET: mock
+
+      - name: Wait for all services healthy
+        run: |
+          echo "Waiting for postgres..."
+          for i in $(seq 1 30); do
+            docker compose -f infra/docker-compose.yml exec -T postgres pg_isready -U sentinel && break
+            sleep 2
+          done
+          echo "Waiting for RabbitMQ..."
+          for i in $(seq 1 30); do
+            docker compose -f infra/docker-compose.yml exec -T rabbitmq rabbitmq-diagnostics -q ping && break
+            sleep 2
+          done
+          echo "Waiting for Redis..."
+          for i in $(seq 1 30); do
+            docker compose -f infra/docker-compose.yml exec -T redis redis-cli ping | grep -q PONG && break
+            sleep 1
+          done
+          echo "✅ All infrastructure services healthy"
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f infra/docker-compose.yml down -v
