@@ -1,0 +1,28 @@
+{
+  "name": "sentinel",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "test": "turbo test",
+    "lint": "turbo lint",
+    "clean": "turbo clean",
+    "db:generate": "pnpm --filter @sentinel/db generate",
+    "db:migrate": "pnpm --filter @sentinel/db migrate:dev",
+    "db:migrate:deploy": "pnpm --filter @sentinel/db migrate:deploy",
+    "db:studio": "pnpm --filter @sentinel/db studio",
+    "db:seed": "pnpm --filter @sentinel/db seed"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.2",
+    "prettier": "^3.3.2",
+    "turbo": "^2.0.9",
+    "typescript": "^5.4.5"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@9.4.0"
+}
