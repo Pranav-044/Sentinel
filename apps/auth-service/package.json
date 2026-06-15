@@ -1,0 +1,36 @@
+{
+  "name": "@sentinel/auth-service",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "clean": "rimraf dist",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^9.3.1",
+    "@fastify/cors": "^9.0.1",
+    "@fastify/helmet": "^11.1.1",
+    "@fastify/rate-limit": "^9.1.0",
+    "@sentinel/config": "workspace:*",
+    "@sentinel/db": "workspace:*",
+    "@sentinel/types": "workspace:*",
+    "axios": "^1.7.2",
+    "dotenv": "^16.4.5",
+    "fastify": "^4.28.0",
+    "fastify-plugin": "^4.5.1",
+    "jsonwebtoken": "^9.0.2",
+    "pino-pretty": "^11.2.1",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.6",
+    "@types/node": "^20.14.2",
+    "rimraf": "^5.0.7",
+    "tsx": "^4.15.7",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0"
+  }
+}
