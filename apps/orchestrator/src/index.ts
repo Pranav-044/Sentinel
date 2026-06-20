@@ -9,6 +9,8 @@ import fp from 'fastify-plugin'
 import { connectRabbitMQ, consumeQueue, closeRabbitMQ, QUEUE_RESULTS } from './rabbitmq.js'
 import { handleAnalysisCompleted } from './handlers.js'
 import { jobRoutes } from './routes/jobs.js'
+import { graphRoutes } from './routes/graph.js'
+import { neo4jPlugin } from './plugins/neo4j.js'
 
 const env = validateEnv(orchestratorEnvSchema, process.env as NodeJS.ProcessEnv)
 
@@ -28,6 +30,13 @@ app.register(fp(async (fastify) => {
   fastify.addHook('onClose', async () => { await prisma.$disconnect() })
 }))
 
+// Neo4j plugin
+app.register(neo4jPlugin, {
+  uri: env.NEO4J_URI,
+  user: env.NEO4J_USER,
+  password: env.NEO4J_PASSWORD,
+})
+
 async function bootstrap() {
   await app.register(helmet, { contentSecurityPolicy: false })
   await app.register(cors)
@@ -39,6 +48,7 @@ async function bootstrap() {
   }))
 
   await app.register(jobRoutes, { prefix: '/jobs' })
+  await app.register(graphRoutes, { prefix: '/repos' })
 
   // ── Start Redis for WS pub/sub ────────────────────────────────────────────
   const redis = new Redis(env.REDIS_URL)
@@ -60,3 +70,4 @@ bootstrap().catch((err) => {
   console.error('Failed to start orchestrator:', err)
   process.exit(1)
 })
+

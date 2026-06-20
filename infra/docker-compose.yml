@@ -11,6 +11,7 @@ version: '3.9'
 #   postgres           → localhost:5432
 #   rabbitmq           → localhost:5672 (AMQP), localhost:15672 (Management UI)
 #   redis              → localhost:6379
+#   neo4j              → bolt://localhost:7687, http://localhost:7474 (Browser UI)
 #   prometheus         → http://localhost:9090
 #   grafana            → http://localhost:3001
 # ─────────────────────────────────────────────────────────────────────────────
@@ -20,6 +21,9 @@ x-common-env: &common-env
   DATABASE_URL: postgresql://sentinel:sentinel@postgres:5432/sentinel
   RABBITMQ_URL: amqp://sentinel:sentinel@rabbitmq:5672
   REDIS_URL: redis://redis:6379
+  NEO4J_URI: bolt://neo4j:7687
+  NEO4J_USER: neo4j
+  NEO4J_PASSWORD: ${NEO4J_PASSWORD:-sentinel-neo4j-password}
   JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-dev-sentinel-access-secret-min-32-chars}
   JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev-sentinel-refresh-secret-min-32-chars}
   JWT_ACCESS_EXPIRY: ${JWT_ACCESS_EXPIRY:-1h}
@@ -100,6 +104,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      neo4j:
+        condition: service_healthy
     environment:
       <<: *common-env
       PORT: 4003
@@ -130,7 +136,6 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: sentinel
       RABBITMQ_DEFAULT_PASS: sentinel
-      # Enable the management plugin
       RABBITMQ_PLUGINS: rabbitmq_management
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
@@ -152,6 +157,31 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+
+  # ── Neo4j 5 (Graph Database) ───────────────────────────────────────────────
+  # Browser UI: http://localhost:7474  (bolt://localhost:7687)
+  # Login: neo4j / sentinel-neo4j-password
+  neo4j:
+    image: neo4j:5-community
+    ports:
+      - '7474:7474'  # HTTP Browser UI
+      - '7687:7687'  # Bolt protocol (driver connection)
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-sentinel-neo4j-password}
+      # Enable APOC plugin (needed for advanced graph procedures)
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: 'apoc.*'
+      NEO4J_dbms_memory_heap_initial__size: 512m
+      NEO4J_dbms_memory_heap_max__size: 1G
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:7474 || exit 1']
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
   # ── Prometheus ─────────────────────────────────────────────────────────────
   prometheus:
@@ -182,5 +212,7 @@ volumes:
   pg_data:
   rabbitmq_data:
   redis_data:
+  neo4j_data:
+  neo4j_logs:
   prometheus_data:
   grafana_data:

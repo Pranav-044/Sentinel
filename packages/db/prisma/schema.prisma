@@ -106,8 +106,9 @@ model Repository {
   updatedAt      DateTime  @updatedAt @map("updated_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  jobs         AnalysisJob[]
-  healthScores HealthScore[]
+  jobs             AnalysisJob[]
+  healthScores     HealthScore[]
+  fileHealthScores FileHealthScore[]
 
   @@index([organizationId])
   @@map("repositories")
@@ -179,7 +180,47 @@ model HealthScore {
 
   repository Repository  @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
   job        AnalysisJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  fileScores FileHealthScore[]
 
   @@index([repositoryId, createdAt(sort: Desc)])
   @@map("health_scores")
 }
+
+// ─── Per-File Health Scores ───────────────────────────────────────────────────
+// One row per file, per analysis run. Populated by the Python analysis engine.
+
+model FileHealthScore {
+  id              String  @id @default(uuid())
+  healthScoreId   String  @map("health_score_id")
+  repositoryId    String  @map("repository_id")
+
+  // File identity
+  filePath        String  @map("file_path")     // e.g. "src/services/auth.ts"
+  language        String?                        // e.g. "typescript"
+
+  // Cyclomatic complexity metrics
+  cyclomaticComplexity Float  @map("cyclomatic_complexity")  // avg across functions
+  cognitiveComplexity  Float  @default(0) @map("cognitive_complexity")
+
+  // Churn metrics (from git history)
+  churnCount      Int     @default(0) @map("churn_count")    // commit count in last 90 days
+  authorCount     Int     @default(0) @map("author_count")   // distinct authors in last 90 days
+
+  // Test coverage
+  lineCoverage    Float?  @map("line_coverage")   // 0-100%, null if not measured
+  branchCoverage  Float?  @map("branch_coverage")
+
+  // Composite risk flag
+  isHotspot       Boolean @default(false) @map("is_hotspot")
+  hotspotReasons  Json    @default("[]") @map("hotspot_reasons")  // e.g. ["high-churn", "high-complexity"]
+
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  healthScore HealthScore @relation(fields: [healthScoreId], references: [id], onDelete: Cascade)
+  repository  Repository  @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  @@index([healthScoreId])
+  @@index([repositoryId, isHotspot])
+  @@map("file_health_scores")
+}
+

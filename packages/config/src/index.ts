@@ -48,6 +48,9 @@ export const orchestratorEnvSchema = z.object({
   DATABASE_URL: z.string().url(),
   RABBITMQ_URL: z.string().default('amqp://sentinel:sentinel@localhost:5672'),
   REDIS_URL: z.string().default('redis://localhost:6379'),
+  NEO4J_URI: z.string().default('bolt://localhost:7687'),
+  NEO4J_USER: z.string().default('neo4j'),
+  NEO4J_PASSWORD: z.string().min(1),
   JWT_ACCESS_SECRET: z.string().min(32),
 })
 
