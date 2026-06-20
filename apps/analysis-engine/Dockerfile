@@ -14,7 +14,7 @@ FROM base AS deps
 
 RUN pip install --no-cache-dir uv
 
-COPY pyproject.toml .
+COPY apps/analysis-engine/pyproject.toml .
 # Install all deps into system site-packages (no venv overhead in container)
 RUN uv pip install --system --no-cache -e .
 
@@ -22,8 +22,8 @@ RUN uv pip install --system --no-cache -e .
 FROM deps AS final
 
 # Copy the analyzer package and worker entry point
-COPY analyzer/ ./analyzer/
-COPY worker.py .
+COPY apps/analysis-engine/analyzer/ ./analyzer/
+COPY apps/analysis-engine/worker.py .
 
 # Use non-root user (principle of least privilege)
 RUN useradd -m -u 1000 sentinel && chown -R sentinel:sentinel /app
