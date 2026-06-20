@@ -89,6 +89,15 @@ async function bootstrap() {
     preHandler: app.authenticate,
   })
 
+  // Graph & file-score data (served by orchestrator, no auth on graph reads)
+  await app.register(httpProxy, {
+    upstream: env.ORCHESTRATOR_URL,
+    prefix: '/api/graph',
+    rewritePrefix: '/repos',  // orchestrator exposes /repos/:id/graph and /repos/:id/files
+    http2: false,
+    preHandler: app.authenticate,
+  })
+
   // Real-time WebSocket for analysis job progress updates
   await app.register(wsRoutes, { prefix: '/ws' })
 

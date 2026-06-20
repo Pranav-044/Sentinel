@@ -7,13 +7,14 @@ export interface User {
   name: string
   avatarUrl: string | null
   githubLogin: string
+  login: string      // alias of githubLogin used in UI
   createdAt: string
 }
 
 export interface JwtPayload {
   sub: string        // user UUID
   githubId: number
-  login: string      // GitHub username
+  login: string
   email: string | null
   name: string
   iat?: number
@@ -52,14 +53,17 @@ export interface Repository {
   organizationId: string
   githubId: number
   name: string
-  fullName: string           // e.g. "org/repo"
+  fullName: string
   description: string | null
   defaultBranch: string
+  cloneUrl: string
   isPrivate: boolean
-  isActive: boolean          // tracking enabled?
+  isActive: boolean
   lastAnalyzedAt: string | null
   createdAt: string
   updatedAt: string
+  healthScores?: HealthScore[]
+  jobs?: AnalysisJob[]
 }
 
 // ─── Analysis Jobs ────────────────────────────────────────────────────────────
@@ -70,7 +74,7 @@ export type JobTrigger = 'webhook' | 'manual' | 'scheduled'
 export interface AnalysisJob {
   id: string
   repositoryId: string
-  triggeredBy: JobTrigger
+  trigger: JobTrigger
   status: JobStatus
   commitSha: string | null
   branch: string | null
@@ -80,19 +84,76 @@ export interface AnalysisJob {
   completedAt: string | null
 }
 
-// ─── Health Scores ─────────────────────────────────────────────────────────
+// ─── Health Scores ────────────────────────────────────────────────────────────
+
+export type FindingSeverity = 'error' | 'warning' | 'info' | 'critical' | 'high' | 'medium' | 'low'
+
+export interface AgentFinding {
+  agent: string
+  severity: FindingSeverity
+  message: string
+  file?: string | null
+  line?: number | null
+}
 
 export interface HealthScore {
   id: string
   repositoryId: string
   jobId: string
-  overallScore: number       // 0-100
-  complexityScore: number    // 0-100
-  churnScore: number         // 0-100 (lower churn = higher score)
-  couplingScore: number      // 0-100
-  testCoverageScore: number  // 0-100
-  debtMinutes: number        // estimated remediation time in minutes
+  overallScore: number
+  complexityScore: number
+  churnScore: number
+  couplingScore: number
+  testCoverageScore: number
+  debtMinutes: number
+  hotspotCount: number
+  agentFindings: AgentFinding[]
   createdAt: string
+}
+
+export interface FileHealthScore {
+  id: string
+  healthScoreId: string
+  repositoryId: string
+  filePath: string
+  language: string | null
+  cyclomaticComplexity: number
+  cognitiveComplexity: number
+  churnCount: number
+  authorCount: number
+  lineCoverage: number | null
+  branchCoverage: number | null
+  isHotspot: boolean
+  hotspotReasons: string[]
+  createdAt: string
+}
+
+// ─── Graph API ────────────────────────────────────────────────────────────────
+
+export interface GraphNode {
+  id: string
+  label: string
+  language: string
+  complexity: number
+  isHotspot: boolean
+}
+
+export interface GraphEdge {
+  id: string
+  source: string
+  target: string
+  weight: number
+}
+
+export interface GraphData {
+  nodes: GraphNode[]
+  edges: GraphEdge[]
+  meta: {
+    repositoryId: string
+    nodeCount: number
+    edgeCount: number
+    generatedAt: string
+  }
 }
 
 // ─── RabbitMQ Event Payloads ─────────────────────────────────────────────────
@@ -100,10 +161,10 @@ export interface HealthScore {
 export interface RepoAnalysisRequestedEvent {
   jobId: string
   repositoryId: string
-  fullName: string           // "org/repo"
+  fullName: string
   cloneUrl: string
   branch: string
-  commitSha: string
+  commitSha: string | null
   triggeredBy: JobTrigger
   requestedAt: string
 }
@@ -111,8 +172,8 @@ export interface RepoAnalysisRequestedEvent {
 // ─── GitHub Webhook Payloads ─────────────────────────────────────────────────
 
 export interface GitHubPushEventPayload {
-  ref: string                // "refs/heads/main"
-  after: string              // commit SHA
+  ref: string
+  after: string
   repository: {
     id: number
     full_name: string
@@ -120,9 +181,7 @@ export interface GitHubPushEventPayload {
     default_branch: string
     private: boolean
   }
-  installation?: {
-    id: number
-  }
+  installation?: { id: number }
 }
 
 // ─── API Responses ────────────────────────────────────────────────────────────
@@ -142,7 +201,12 @@ export interface ApiError {
 
 // ─── WebSocket Events ─────────────────────────────────────────────────────────
 
-export type WsEventType = 'job:started' | 'job:completed' | 'job:failed' | 'score:updated'
+export type WsEventType =
+  | 'job:started'
+  | 'job:analyzing'
+  | 'job:completed'
+  | 'job:failed'
+  | 'score:updated'
 
 export interface WsEvent<T = unknown> {
   type: WsEventType

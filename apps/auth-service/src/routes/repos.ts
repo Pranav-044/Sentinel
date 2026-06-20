@@ -67,11 +67,11 @@ export const repoRoutes: FastifyPluginAsync = async (app) => {
       include: {
         healthScores: {
           orderBy: { createdAt: 'desc' },
-          take: 30,  // last 30 data points for the trendline
+          take: 30,
           select: {
             id: true, overallScore: true, complexityScore: true,
             churnScore: true, couplingScore: true, testCoverageScore: true,
-            debtMinutes: true, hotspotCount: true, createdAt: true,
+            debtMinutes: true, hotspotCount: true, agentFindings: true, createdAt: true,
           },
         },
         jobs: {

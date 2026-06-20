@@ -5,6 +5,7 @@ import { Activity, Play, GitBranch, Github, Clock, Network, FileCode2, Cpu, Aler
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import clsx from 'clsx'
 import { api } from '../lib/api'
+import { withCache, invalidateCache } from '../lib/cache'
 import { JobTracker } from '../components/JobTracker'
 import { DependencyGraph } from '../components/DependencyGraph'
 import { FileScoresTable } from '../components/FileScoresTable'
@@ -35,15 +36,20 @@ export function RepoDashboard() {
   const [isTriggering, setIsTriggering] = useState(false)
   const [activeTab, setActiveTab] = useState<Tab>('overview')
 
-  const fetchRepo = useCallback(async () => {
+  const fetchRepo = useCallback(async (bust = false) => {
     if (!id) return
+    if (bust) invalidateCache(`repo:${id}`)
     try {
-      const { data } = await api.get(`/repos/${id}`)
+      const data = await withCache(
+        `repo:${id}`,
+        () => api.get(`/repos/${id}`).then(r => r.data),
+        30_000,
+      )
       setRepo(data)
     } catch {}
   }, [id])
 
-  useEffect(() => { fetchRepo() }, [fetchRepo])
+  useEffect(() => { fetchRepo(false) }, [fetchRepo])
 
   const triggerAnalysis = async () => {
     if (!id || isTriggering) return
@@ -138,7 +144,14 @@ export function RepoDashboard() {
           >
             <JobTracker
               jobId={activeJobId}
-              onComplete={() => { setActiveJobId(null); fetchRepo() }}
+              onComplete={() => {
+                setActiveJobId(null)
+                // Invalidate all related cache entries so fresh data loads
+                invalidateCache(`repo:${id}`)
+                invalidateCache(`graph:${id}`)
+                invalidateCache(`files:${id}`)
+                fetchRepo(true)
+              }}
             />
           </motion.div>
         )}

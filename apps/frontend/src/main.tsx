@@ -1,28 +1,61 @@
-import React from 'react'
+import React, { lazy, Suspense } from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './components/AuthProvider'
-import { DashboardLayout } from './components/DashboardLayout'
-import { Login, OAuthCallback } from './pages/Login'
-import { ReposList } from './pages/ReposList'
-import { RepoDashboard } from './pages/RepoDashboard'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import './index.css'
+
+// ── Lazy-loaded routes (code splitting — DependencyGraph is ~150kB) ──────────
+const DashboardLayout = lazy(() =>
+  import('./components/DashboardLayout').then(m => ({ default: m.DashboardLayout }))
+)
+const Login = lazy(() =>
+  import('./pages/Login').then(m => ({ default: m.Login }))
+)
+const OAuthCallback = lazy(() =>
+  import('./pages/Login').then(m => ({ default: m.OAuthCallback }))
+)
+const ReposList = lazy(() =>
+  import('./pages/ReposList').then(m => ({ default: m.ReposList }))
+)
+const RepoDashboard = lazy(() =>
+  import('./pages/RepoDashboard').then(m => ({ default: m.RepoDashboard }))
+)
+const NotFound = lazy(() =>
+  import('./pages/NotFound').then(m => ({ default: m.NotFound }))
+)
+
+// Minimal spinner shown during code-split chunk loading
+function SuspenseFallback() {
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="w-8 h-8 rounded-full border-2 border-brand-400 border-t-transparent animate-spin" />
+    </div>
+  )
+}
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <BrowserRouter>
-      <AuthProvider>
-        <Routes>
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/callback" element={<OAuthCallback />} />
-          
-          <Route path="/dashboard" element={<DashboardLayout />}>
-            <Route index element={<ReposList />} />
-            <Route path="repos/:id" element={<RepoDashboard />} />
-          </Route>
-        </Routes>
-      </AuthProvider>
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <AuthProvider>
+          <Suspense fallback={<SuspenseFallback />}>
+            <Routes>
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/callback" element={<OAuthCallback />} />
+
+              <Route path="/dashboard" element={<DashboardLayout />}>
+                <Route index element={<ReposList />} />
+                <Route path="repos/:id" element={<RepoDashboard />} />
+              </Route>
+
+              {/* Catch-all 404 */}
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </Suspense>
+        </AuthProvider>
+      </BrowserRouter>
+    </ErrorBoundary>
   </React.StrictMode>
 )
