@@ -1,10 +1,11 @@
-import React, { createContext, useContext, useEffect, useState } from 'react'
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import type { User } from '@sentinel/types'
 import { api, getAccessToken, clearAccessToken } from '../lib/api'
 
 interface AuthContextType {
   user: User | null
   isLoading: boolean
+  refetchUser: () => Promise<void>
   logout: () => Promise<void>
 }
 
@@ -14,20 +15,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
+  const refetchUser = useCallback(async () => {
+    try {
+      const res = await api.get<User>('/api/auth/me')
+      setUser(res.data)
+    } catch {
+      setUser(null)
+    }
+  }, [])
+
   useEffect(() => {
-    // If we have an access token, or we might have a refresh token cookie, try to fetch /me
-    api.get<User>('/auth/me')
+    // On mount: try to fetch /me. The axios interceptor will attempt a
+    // token refresh from the httpOnly cookie if access token is missing.
+    api.get<User>('/api/auth/me')
       .then(res => setUser(res.data))
-      .catch(() => {
-        // Interceptor will try refresh token if it exists
-        setUser(null)
-      })
+      .catch(() => setUser(null))
       .finally(() => setIsLoading(false))
   }, [])
 
   const logout = async () => {
     try {
-      await api.delete('/auth/logout')
+      await api.delete('/api/auth/logout')
     } finally {
       clearAccessToken()
       setUser(null)
@@ -36,7 +44,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, logout }}>
+    <AuthContext.Provider value={{ user, isLoading, refetchUser, logout }}>
       {children}
     </AuthContext.Provider>
   )

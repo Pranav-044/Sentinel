@@ -1,8 +1,11 @@
 import axios from 'axios'
-import { config } from '../config'
+
+// In dev, all /api/* calls are proxied by Vite to the API gateway on port 4000.
+// In production, /api/* is served by the same host (nginx/cloud), routing to the gateway.
+const BASE = import.meta.env.VITE_API_URL ?? ''
 
 export const api = axios.create({
-  baseURL: config.apiBase,
+  baseURL: BASE,
   withCredentials: true, // send httpOnly refresh-token cookie automatically
 })
 
@@ -21,7 +24,7 @@ api.interceptors.response.use(
     if (err.response?.status === 401 && !original._retry) {
       original._retry = true
       try {
-        const { data } = await axios.post(`${config.apiBase}/auth/refresh`, {}, { withCredentials: true })
+        const { data } = await axios.post(`${BASE}/api/auth/refresh`, {}, { withCredentials: true })
         setAccessToken(data.accessToken)
         original.headers.Authorization = `Bearer ${data.accessToken}`
         return api(original)
