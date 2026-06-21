@@ -63,7 +63,7 @@ export function FileScoresTable({ repositoryId }: { repositoryId: string }) {
         // /api/graph/:id/files → proxied to orchestrator /repos/:id/files
         const data = await withCache<FilesResponse>(
           `files:${repositoryId}`,
-          () => api.get<FilesResponse>(`/graph/${repositoryId}/files`).then(r => r.data),
+          () => api.get<FilesResponse>(`/api/graph/${repositoryId}/files`).then(r => r.data),
           30_000,
         )
         if (!cancelled) {

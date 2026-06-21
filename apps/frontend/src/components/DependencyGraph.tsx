@@ -104,7 +104,7 @@ export function DependencyGraph({ repositoryId }: { repositoryId: string }) {
         // Uses /api/graph/:id/graph → proxied to orchestrator /repos/:id/graph
         const data = await withCache<GraphData>(
           `graph:${repositoryId}`,
-          () => api.get<GraphData>(`/graph/${repositoryId}/graph`).then(r => r.data),
+          () => api.get<GraphData>(`/api/graph/${repositoryId}/graph`).then(r => r.data),
           60_000, // graph data is expensive to compute — cache 60s
         )
         if (cancelled) return
