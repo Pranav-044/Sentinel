@@ -42,7 +42,7 @@ export function RepoDashboard() {
     try {
       const data = await withCache(
         `repo:${id}`,
-        () => api.get(`/repos/${id}`).then(r => r.data),
+        () => api.get(`/api/repos/${id}`).then(r => r.data),
         30_000,
       )
       setRepo(data)
@@ -55,7 +55,7 @@ export function RepoDashboard() {
     if (!id || isTriggering) return
     setIsTriggering(true)
     try {
-      const { data } = await api.post('/jobs', { repositoryId: id })
+      const { data } = await api.post('/api/jobs', { repositoryId: id })
       setActiveJobId(data.jobId)
     } catch {}
     setIsTriggering(false)

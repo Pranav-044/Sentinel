@@ -26,9 +26,9 @@ export function ReposList() {
   useEffect(() => {
     async function fetchRepos() {
       try {
-        const { data: orgs } = await api.get<{ id: string }[]>('/orgs')
+        const { data: orgs } = await api.get<{ id: string }[]>('/api/orgs')
         if (orgs.length > 0) {
-          const { data: orgDetails } = await api.get<{ repositories: any[] }>(`/orgs/${orgs[0].id}`)
+          const { data: orgDetails } = await api.get<{ repositories: any[] }>(`/api/orgs/${orgs[0].id}`)
           setRepos(orgDetails.repositories ?? [])
         }
       } catch {
