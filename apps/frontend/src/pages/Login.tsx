@@ -1,8 +1,7 @@
 import { useEffect } from 'react'
-import { useNavigate, useSearchParams, Navigate } from 'react-router-dom'
+import { useNavigate, Navigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Shield, Github, ArrowRight, Activity, GitBranch, Zap } from 'lucide-react'
-import { config } from '../config'
+import { Shield, Github, ArrowRight, Activity, GitBranch, Zap, AlertTriangle } from 'lucide-react'
 import { setAccessToken } from '../lib/api'
 import { useAuth } from '../components/AuthProvider'
 import { AnimatedBackground } from '../components/AnimatedBackground'
@@ -106,7 +105,7 @@ export function Login() {
 
           {/* GitHub OAuth CTA */}
           <motion.a
-            href={`${config.apiBase}/auth/github/authorize`}
+            href="/api/auth/github/authorize"
             className="btn-primary w-full justify-center py-3 text-base"
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
@@ -149,23 +148,31 @@ export function Login() {
 }
 
 // ── OAuthCallback ──────────────────────────────────────────────────────────
+// The backend redirects to /auth/callback#token=<jwt> (hash fragment).
+// Hash fragments are never sent to the server (XSS-safe), so we read
+// them client-side from window.location.hash.
 
 export function OAuthCallback() {
-  const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const { user } = useAuth()
 
   useEffect(() => {
-    const token = searchParams.get('token')
+    // Parse hash fragment: "#token=eyJ..."
+    const hash = window.location.hash // e.g. "#token=eyJhbGci..."
+    const params = new URLSearchParams(hash.replace(/^#/, ''))
+    const token = params.get('token')
+
     if (token) {
       setAccessToken(token)
+      // Clear the hash from URL so the token isn't visible in browser history
+      window.history.replaceState(null, '', window.location.pathname)
       window.location.href = '/dashboard'
     } else if (user) {
       navigate('/dashboard', { replace: true })
     } else {
-      navigate('/login', { replace: true })
+      navigate('/login?error=auth_failed', { replace: true })
     }
-  }, [searchParams, navigate, user])
+  }, [navigate, user])
 
   return (
     <div className="min-h-screen flex items-center justify-center">
@@ -177,6 +184,50 @@ export function OAuthCallback() {
       >
         <div className="w-10 h-10 rounded-full border-2 border-brand-400 border-t-transparent animate-spin" />
         <p className="text-slate-400 text-sm">Completing authentication...</p>
+      </motion.div>
+    </div>
+  )
+}
+
+// ── AuthError ──────────────────────────────────────────────────────────────
+// Shown when GitHub OAuth returns an error (user denied, etc)
+
+export function AuthError() {
+  const navigate = useNavigate()
+  // Read reason from query string: /auth/error?reason=access_denied
+  const reason = new URLSearchParams(window.location.search).get('reason') ?? 'unknown'
+
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center px-4 relative overflow-hidden">
+      <AnimatedBackground />
+      <motion.div
+        className="w-full max-w-sm"
+        initial={{ opacity: 0, y: 24, scale: 0.96 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+      >
+        <div className="card text-center py-10">
+          <div className="w-12 h-12 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto mb-4">
+            <AlertTriangle className="w-6 h-6 text-red-400" />
+          </div>
+          <h2 className="text-lg font-bold text-slate-100 mb-1">Authentication failed</h2>
+          <p className="text-sm text-slate-500 mb-6">
+            {reason === 'access_denied'
+              ? 'You denied access to GitHub. Please try again.'
+              : reason === 'token_exchange_failed'
+              ? 'Could not exchange the authorization code. Please try again.'
+              : `An error occurred: ${reason}`}
+          </p>
+          <motion.button
+            className="btn-primary w-full justify-center"
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => navigate('/login', { replace: true })}
+          >
+            <Github className="w-4 h-4" />
+            Try again
+          </motion.button>
+        </div>
       </motion.div>
     </div>
   )

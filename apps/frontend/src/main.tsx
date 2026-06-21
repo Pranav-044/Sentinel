@@ -15,6 +15,9 @@ const Login = lazy(() =>
 const OAuthCallback = lazy(() =>
   import('./pages/Login').then(m => ({ default: m.OAuthCallback }))
 )
+const AuthError = lazy(() =>
+  import('./pages/Login').then(m => ({ default: m.AuthError }))
+)
 const ReposList = lazy(() =>
   import('./pages/ReposList').then(m => ({ default: m.ReposList }))
 )
@@ -43,7 +46,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/login" element={<Login />} />
-              <Route path="/callback" element={<OAuthCallback />} />
+              {/* /auth/callback matches GITHUB_REDIRECT_URI which ends in /auth/callback */}
+              <Route path="/auth/callback" element={<OAuthCallback />} />
+              <Route path="/auth/error" element={<AuthError />} />
 
               <Route path="/dashboard" element={<DashboardLayout />}>
                 <Route index element={<ReposList />} />
